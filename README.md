@@ -24,6 +24,17 @@ rvs fills exactly that gap, and nothing more. It does **not** re-implement perce
 
 > Positioning note: motion gating → detection pipelines are commodity (NVR stacks). The differentiating layer here is **proprioception-aware semantics**: self-motion attribution on the event stream, peripheral-vision tooling, and reflex-grade interfaces for robot consumers.
 
+## Positioning vs existing systems
+
+| System | Trigger model | Hard cost ceiling | ASR channel | Robot reflex |
+|---|---|---|---|---|
+| Frigate (NVR) | motion gate → detector | n/a (no VLM) | ✗ | ✗ |
+| unblink (Go + VLM) | **fixed-interval sampling** (5 s / 3 frames, verified in its `.env.example`) | ✗ | ✗ | ✗ |
+| Streaming video LLMs | model-side: VLM ingests every frame | model-dependent | ✗ | ✗ |
+| **vus + rvs** | **event-triggered** (motion gate → segment close) | **floor interval + single-flight merge** | ✓ | ✓ |
+
+The closest neighbor, unblink, samples frames at a fixed cadence — no event gating, no hard cost cap, no ASR channel. The combination occupied here (zero-training gating + event-triggered VLM + cost-cap engineering + ASR alignment + robot reflex interfaces) remains open in public systems and literature.
+
 ## What rvs adds
 
 ### 1. Proprioceptive gate (`rvs.proprio`)
