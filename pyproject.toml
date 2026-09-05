@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rvs"
+version = "0.1.0"
+description = "rvs - vus 之上的机器人增量层：本体感受门控 + 全景外围视觉 + 机器人桥"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "rvs contributors" }]
+keywords = ["robot", "video-understanding", "realtime", "ego-motion", "vlm"]
+dependencies = [
+    "vus @ git+https://github.com/CommitStrip/video-understanding-skill.git",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+packages = ["rvs"]
