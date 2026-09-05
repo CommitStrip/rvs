@@ -140,7 +140,7 @@ rvs ships **no model**. The slot is vus's backend registry: `create_vlm("mock")`
 ## Roadmap
 
 - [x] CLIP reflex layer on T0.5: bounded-vocabulary zero-shot labels, offline text-embedding cache, negative-label filtering (`rvs.clip_labeler`)
-- [ ] Deep integration with vus `UnderstandingWorker` (trigger-based deliberation needs an ego hook on the vus side)
+- [x] Deliberation integration: `RobotPipeline.attach_understanding()` mounts vus `UnderstandingWorker` on the bridge event stream; the vus-side `ego_gate` hook defers triggers while the robot is in a self-motion suspicion window (material is kept, nothing is lost)
 - [ ] Panorama source implementation + periphery-triggered attention shifts
 - [ ] Self-intent rendering: project the robot's planned path into the frame as a visual annotation for the VLM (original research direction — see design notes)
 - [ ] Feed-forward motion compensation for translation (commanded kinematics → homography warp) to restore event quality during sustained motion

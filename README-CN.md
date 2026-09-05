@@ -140,7 +140,7 @@ rvs **不捆绑任何模型**。槽位就是 vus 的后端注册表：`create_vl
 ## 路线图
 
 - [x] T0.5 的 CLIP 反射层：有界词表零样本打标、文本嵌入离线缓存、负标签过滤（`rvs.clip_labeler`）
-- [ ] 与 vus `UnderstandingWorker` 深度集成（触发式慎思需要 vus 侧加 ego 钩子）
+- [x] 慎思集成：`RobotPipeline.attach_understanding()` 把 vus `UnderstandingWorker` 挂上桥事件流；vus 侧 `ego_gate` 钩子在自我运动嫌疑窗口内延迟触发（素材照收不丢）
 - [ ] 全景源实现 + 外围事件触发的注意力转移
 - [ ] 自我意图渲染：把机器人规划路径投影进画面作为 VLM 的视觉标注（原创方向）
 - [ ] 平移的前馈运动补偿（指令运动学 → 单应 warp），恢复持续运动期的事件质量

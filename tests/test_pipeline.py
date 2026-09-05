@@ -140,3 +140,48 @@ def test_no_labeler_keeps_vus_contract_backwards_compatible(synthetic_video):
     evs = sub.drain()
     assert summary["tags"] == 0
     assert not [e for e in evs if e["type"] == "tag"]       # 无打标器：无 tag（回归）
+
+
+# ---------- W-B：慎思层集成（UnderstandingWorker 挂载） ----------
+
+def test_end_to_end_with_understanding_worker(synthetic_video):
+    from vus.live.state import SessionState
+    from vus.live.vlm_client import MockVLM as VusMock
+    state = SessionState()
+    vlm = VusMock()
+    pipe = RobotPipeline(FileSource(synthetic_video), labeler=_FakeLabeler())
+    worker = pipe.attach_understanding(state=state, vlm=vlm)
+    sub = pipe.bus.subscribe()
+    try:
+        summary = pipe.run()
+        assert summary["ok"] and summary["tags"] >= 1
+        assert worker.wait_idle(timeout=10.0)
+        assert len(vlm.calls) >= 1                          # 慎思调用发生
+        assert state.snapshot()["t2"]["now"]                # 结论进滚动状态
+        und = [e for e in sub.drain() if e["type"] == "understanding"]
+        assert und                                          # 结论回流到桥总线
+    finally:
+        worker.stop()
+
+
+def test_ego_suspect_defers_deliberation_trigger(synthetic_video, tmp_path):
+    """ego 钩子端到端：嫌疑窗口内的关键帧不触发慎思，但素材（落盘帧）不丢。"""
+    from vus.live.state import SessionState
+    from vus.live.vlm_client import MockVLM as VusMock
+
+    def ego_always_suspect(t):
+        return CommandState(t=t, angular_v=0.8)             # 全程嫌疑
+
+    state = SessionState()
+    vlm = VusMock()
+    pipe = RobotPipeline(FileSource(synthetic_video),
+                         ego_provider=ego_always_suspect, out_dir=tmp_path)
+    worker = pipe.attach_understanding(state=state, vlm=vlm)
+    try:
+        pipe.run()
+        worker.wait_idle(timeout=10.0)
+        assert not vlm.calls                                # 全程嫌疑：零慎思调用
+        assert worker._win.kf                               # 带路径的关键帧在窗（不丢）
+        assert all(Path(p).exists() for _t, p in worker._win.kf)
+    finally:
+        worker.stop()

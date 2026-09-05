@@ -143,6 +143,21 @@ class RobotPipeline:
             return str(stats.get("last_error", "") or "")
         return str(getattr(stats, "last_error", "") or "")
 
+    def attach_understanding(self, state=None, vlm=None, config=None):
+        """挂载 vus 触发式慎思（UnderstandingWorker 订阅本桥事件流）。
+
+        vus 侧 ego_gate 钩子已生效：自我运动嫌疑窗口内的触发被降权，
+        素材不丢（合并语义）。返回已 start 的 worker（daemon 线程，
+        宿主负责 stop()）；understanding 结果既进 worker.results 也以
+        {"type": "understanding", ...} 事件回到本桥总线。
+        """
+        from vus.live.state import SessionState
+        from vus.live.understanding import UnderstandingWorker
+        worker = UnderstandingWorker(self.bus, state or SessionState(), vlm,
+                                     config=config)
+        worker.start()
+        return worker
+
     def proprio_line(self) -> str:
         """本体状态文本行（供慎思素材窗的自运动归因上下文）。"""
         cmd = self.gate.last_cmd
