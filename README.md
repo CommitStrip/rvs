@@ -58,7 +58,27 @@ Pure functions for equirectangular panoramas (auxiliary low-res camera, not the 
 
 ### 3. Robot bridge (`rvs.pipeline`)
 
-`RobotPipeline` wires a vus `FrameSource` → `ProprioGate` → vus `SmartPipeline`, injecting `ego_suspect`/`ego_reason` into every motion event and republishing on a vus `EventBus`. The vus event contract is preserved verbatim — vus consumers keep working, robot consumers get the extra fields.
+`RobotPipeline` wires a vus `FrameSource` → `ProprioGate` → vus `SmartPipeline`, injecting `ego_suspect`/`ego_reason` into every motion event and republishing on a vus `EventBus`. It also captures keyframes (optional on-disk save, decoupled from labeling) and, when a labeler is attached, publishes `tag` events on the vus contract at the moment each keyframe is born.
+
+### 4. Reflex labeling — CLIP zero-shot tagger (`rvs.clip_labeler`)
+
+`CLIPTagger` gives the reflex layer real semantics: zero-shot labeling against a **configurable vocabulary** (text is the config, no retraining), plus a **negative label** ("background") that wins on empty frames — one model covers both labeling and target-existence filtering.
+
+- Engine: **CLIP ViT-B/32 dual-tower ONNX (MIT weights, commercial-safe)**. MobileCLIP is ~4.8× faster but its `apple-amlr` weights are research-only — kept as an engine-swap candidate, not a default.
+- Latency design: label-set text embeddings are **precomputed offline** into a cache; the hot path runs only the vision tower (one `embed()` per keyframe via vus `ClipOnnx`) plus one matrix-vector product.
+- Labeler input supports **motion-box crops** (same box/scale contract as the motion_crop pipeline), so the reflex arc fires on the magnified region, not the whole frame.
+
+```python
+# one-time setup (see scripts/):
+bash scripts/download_clip_onnx.sh            # model (~153MB int8) + BPE vocab
+python scripts/gen_label_embeddings.py --labels labels.json
+
+# runtime (hot path: vision tower only):
+tagger = CLIPTagger(labels=["a person walking", "a moving car"],
+                    negative_labels=["background, empty scene"])
+pipe = RobotPipeline(source, labeler=tagger, out_dir="out")
+# events now include: {"type": "tag", "labels": [...], "source": "clip", "ms": ...}
+```
 
 ## Architecture
 
@@ -119,11 +139,12 @@ rvs ships **no model**. The slot is vus's backend registry: `create_vlm("mock")`
 
 ## Roadmap
 
+- [x] CLIP reflex layer on T0.5: bounded-vocabulary zero-shot labels, offline text-embedding cache, negative-label filtering (`rvs.clip_labeler`)
 - [ ] Deep integration with vus `UnderstandingWorker` (trigger-based deliberation needs an ego hook on the vus side)
-- [ ] CLIP reflex layer on T0.5: bounded-vocabulary zero-shot labels at MobileCLIP-class latency (3–15 ms), fed by motion-box crops after de-rotation
 - [ ] Panorama source implementation + periphery-triggered attention shifts
 - [ ] Self-intent rendering: project the robot's planned path into the frame as a visual annotation for the VLM (original research direction — see design notes)
 - [ ] Feed-forward motion compensation for translation (commanded kinematics → homography warp) to restore event quality during sustained motion
+- [ ] MobileCLIP engine swap (pending license clearance — `apple-amlr` weights are research-only)
 
 ## License
 

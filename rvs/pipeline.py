@@ -17,8 +17,10 @@ rvs 不重造感知轮子，复用清单：
 """
 
 import time
+from pathlib import Path
 from typing import Callable, Optional
 
+import cv2
 from vus.live.events import EventBus
 from vus.smart_pipeline import SmartPipeline
 
@@ -41,10 +43,16 @@ class RobotPipeline:
     """机器人感知桥（同步逐帧驱动；实时部署由外层按节拍调用 run）。"""
 
     def __init__(self, source, ego_provider: Optional[EgoProvider] = None,
-                 config: Optional[dict] = None):
+                 config: Optional[dict] = None,
+                 labeler=None, out_dir=None):
+        """labeler: T0.5 打标器实例（None=不打标；如 CLIPTagger / BasicLabeler），
+        在关键帧时刻调用 label(frame, motion_ratio) 并发布 tag 事件；
+        out_dir: 关键帧落盘目录（None=只打标不落盘，打标与落盘解耦）。"""
         cfg = dict(config or {})
         self.source = source
         self.ego_provider = ego_provider
+        self.labeler = labeler
+        self.out_dir = out_dir
         self.gate = ProprioGate(
             window_s=cfg.get("proprio_window_s", 0.6),
             angular_thresh=cfg.get("proprio_angular_thresh", 0.15),
@@ -63,7 +71,10 @@ class RobotPipeline:
             return {"ok": False, "error": self._source_error()}
         frames = 0
         ego_suspect_events = 0
+        keyframes = 0
+        tags = 0
         counts: dict = {}
+        last_motion_ratio = 0.0
         try:
             while max_frames is None or frames < max_frames:
                 ok, frame, t = self.source.read()
@@ -79,18 +90,51 @@ class RobotPipeline:
                 for ev in self.perception.process_frame(frame, t):
                     etype = ev.get("type", "")
                     counts[etype] = counts.get(etype, 0) + 1
+                    if "motion_ratio" in ev:
+                        last_motion_ratio = ev["motion_ratio"]
                     if etype in _MOTION_TYPES:
                         ev["ego_suspect"] = verdict.ego_suspect
                         ev["ego_reason"] = verdict.reason
                         if verdict.ego_suspect:
                             ego_suspect_events += 1
+                    if etype == "keyframe":
+                        keyframes += 1
+                        kf_path = (self._save_keyframe(frame, keyframes, t)
+                                   if self.out_dir is not None else "")
+                        # 打标与落盘解耦：不落盘也打标（反射弧热路径）
+                        if self.labeler is not None:
+                            t0 = time.perf_counter()
+                            label_out = self.labeler.label(frame, last_motion_ratio)
+                            ms = round((time.perf_counter() - t0) * 1000.0, 1)
+                            tags += 1
+                            self.bus.publish({
+                                "type": "tag", "t": t, "labels": label_out,
+                                "source": getattr(self.labeler, "name", "custom"),
+                                "ms": ms})
+                        self.bus.publish(
+                            dict(ev, path=kf_path) if kf_path else ev)
+                        continue
                     self.bus.publish(ev)
         finally:
             self.source.close()
         return {"ok": True, "frames": frames, "events": counts,
                 "ego_suspect_events": ego_suspect_events,
+                "keyframes": keyframes, "tags": tags,
                 "motion_segments": len(self.perception.motion_segments),
                 "elapsed_s": round(time.monotonic() - started, 3)}
+
+    def _save_keyframe(self, frame, index: int, t: float) -> str:
+        """关键帧落盘（vus run_live 同款命名），失败返回空串不阻塞帧循环。"""
+        p = Path(self.out_dir) / "keyframes" / ("kf_%04d_t%.1fs.jpg" % (index, t))
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            ok, buf = cv2.imencode(p.suffix or ".jpg", frame)
+            if not ok:
+                return ""
+            buf.tofile(str(p))       # 中文路径安全（imencode+tofile）
+            return str(p)
+        except OSError:
+            return ""
 
     def _source_error(self) -> str:
         """读帧源错误信息（vus stats 为 dict 快照；兼容对象形态）。"""

@@ -58,7 +58,27 @@ equirectangular 全景纯函数（辅助低分辨率相机，非主相机）：
 
 ### 3. 机器人桥（`rvs.pipeline`）
 
-`RobotPipeline` 把 vus `FrameSource` → `ProprioGate` → vus `SmartPipeline` 接成一条链，向每个运动事件注入 `ego_suspect`/`ego_reason` 并发布到 vus `EventBus`。vus 事件契约原样保留——vus 的消费者照常工作，机器人消费者多得两个字段。
+`RobotPipeline` 把 vus `FrameSource` → `ProprioGate` → vus `SmartPipeline` 接成一条链，向每个运动事件注入 `ego_suspect`/`ego_reason` 并发布到 vus `EventBus`。同时捕获关键帧（可选落盘，与打标解耦），接了打标器时在关键帧诞生瞬间按 vus 契约发布 `tag` 事件。
+
+### 4. 语义反射弧——CLIP 零样本打标（`rvs.clip_labeler`）
+
+`CLIPTagger` 给反射层装上真语义：对**可配置词表**做零样本打标（文本即配置，无需训练），并支持**负标签**（"background"）——无目标帧上负标签得最高分，一个模型同时覆盖打标与目标存在性过滤。
+
+- 引擎：**CLIP ViT-B/32 双塔 ONNX（MIT 权重，商用无阻塞）**。MobileCLIP 快约 4.8×，但其 `apple-amlr` 权重仅限科研——保留为换引擎候选，不作默认。
+- 延迟设计：标签集文本嵌入**离线预计算**缓存；热路径只跑视觉塔（经 vus `ClipOnnx` 的 `embed()`，每个关键帧一次）+ 一次矩阵向量乘。
+- 打标输入支持**运动框裁剪**（与 motion_crop 流水线同一 box/scale 契约）——反射弧吃放大后的运动区域，不吃整帧。
+
+```python
+# 一次性准备（见 scripts/）：
+bash scripts/download_clip_onnx.sh            # 模型（int8 约 153MB）+ BPE 词表
+python scripts/gen_label_embeddings.py --labels labels.json
+
+# 运行时（热路径只有视觉塔）：
+tagger = CLIPTagger(labels=["a person walking", "a moving car"],
+                    negative_labels=["background, empty scene"])
+pipe = RobotPipeline(source, labeler=tagger, out_dir="out")
+# 事件流新增：{"type": "tag", "labels": [...], "source": "clip", "ms": ...}
+```
 
 ## 架构
 
@@ -119,11 +139,12 @@ rvs **不捆绑任何模型**。槽位就是 vus 的后端注册表：`create_vl
 
 ## 路线图
 
+- [x] T0.5 的 CLIP 反射层：有界词表零样本打标、文本嵌入离线缓存、负标签过滤（`rvs.clip_labeler`）
 - [ ] 与 vus `UnderstandingWorker` 深度集成（触发式慎思需要 vus 侧加 ego 钩子）
-- [ ] T0.5 的 CLIP 反射层：有界词表零样本标签，MobileCLIP 级延迟（3~15 ms），吃去旋转后的运动框裁剪
 - [ ] 全景源实现 + 外围事件触发的注意力转移
 - [ ] 自我意图渲染：把机器人规划路径投影进画面作为 VLM 的视觉标注（原创方向）
 - [ ] 平移的前馈运动补偿（指令运动学 → 单应 warp），恢复持续运动期的事件质量
+- [ ] MobileCLIP 换引擎（待许可解除——`apple-amlr` 权重仅限科研）
 
 ## 许可
 

@@ -7,3 +7,7 @@ build/
 .venv/
 out/
 .mimosa/
+models/
+*.onnx
+*.npz
+rvs/_vendor/bpe_simple_vocab_16e6.txt.gz
