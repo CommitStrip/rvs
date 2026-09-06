@@ -1,0 +1,34 @@
+{
+  "source": "real",
+  "A_vus_baseline": {
+    "calls": 8,
+    "understandings": 8,
+    "first_understanding_s": 37.84,
+    "frames_fed": 9,
+    "wall_s": 238.02,
+    "idle_calls": 0,
+    "ego_suspect_events": 0,
+    "realtime_x": 84.04
+  },
+  "B_fixed_interval": {
+    "calls": 161,
+    "understandings": 161,
+    "first_understanding_s": 0.0,
+    "frames_fed": 161,
+    "wall_s": 137.03,
+    "idle_calls": 0,
+    "ego_suspect_events": 0,
+    "realtime_x": 145.97,
+    "_frames": 20002
+  },
+  "C_rvs_full": {
+    "calls": 8,
+    "understandings": 8,
+    "first_understanding_s": 37.84,
+    "frames_fed": 9,
+    "wall_s": 174.3,
+    "idle_calls": 0,
+    "ego_suspect_events": 7,
+    "realtime_x": 114.76
+  }
+}

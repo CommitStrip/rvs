@@ -1,0 +1,34 @@
+{
+  "source": "合成场景",
+  "A_vus_baseline": {
+    "calls": 2,
+    "understandings": 2,
+    "first_understanding_s": 45.1,
+    "frames_fed": 4,
+    "wall_s": 9.89,
+    "idle_calls": 0,
+    "ego_suspect_events": 0,
+    "realtime_x": 181.98
+  },
+  "B_fixed_interval": {
+    "calls": 12,
+    "understandings": 12,
+    "first_understanding_s": null,
+    "frames_fed": 12,
+    "wall_s": 1.83,
+    "idle_calls": 0,
+    "ego_suspect_events": 0,
+    "realtime_x": 984.68,
+    "_frames": 1800
+  },
+  "C_rvs_full": {
+    "calls": 2,
+    "understandings": 2,
+    "first_understanding_s": 45.1,
+    "frames_fed": 4,
+    "wall_s": 12.77,
+    "idle_calls": 0,
+    "ego_suspect_events": 748,
+    "realtime_x": 141.0
+  }
+}

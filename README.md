@@ -146,6 +146,24 @@ rvs ships **no model**. The slot is vus's backend registry: `create_vlm("mock")`
 - [ ] Feed-forward motion compensation for translation (commanded kinematics → homography warp) to restore event quality during sustained motion
 - [ ] MobileCLIP engine swap (pending license clearance — `apple-amlr` weights are research-only)
 
+## Baseline experiment (W-E, scheduler-level measurement)
+
+Three baselines × **13.4-min 1080p real footage** (25fps / 20002 frames), measured with MockVLM at the scheduler layer (semantic-quality A/B needs a live endpoint — see `bench/intent_ab.py`). Reproduce: `python bench/baseline_experiment.py --run <video> --out results.json`.
+
+| Baseline | VLM calls | Frames fed | First conclusion (s) | Realtime×* |
+|---|---|---|---|---|
+| A vus event-triggered (full frames ×2, motion_crop off) | **8** | 9 | 37.8 | 97.8× |
+| B fixed-interval 5s (unblink pattern) | 161 | 161 | **0.0 (billed from frame one)** | 116.9× |
+| C rvs full chain (ego gating + motion_crop) | **8** | 9 | 37.8 | 90.2× |
+
+*Realtime× is this machine's mock figure (no network round-trip); not comparable with vus's 4.7× benchmark-machine figure.
+
+**Findings**:
+1. **Event triggering saves 95% of VLM calls vs fixed-interval** (161→8): the 8s floor interval caps the worst-case cost (duration/interval × unit price) and quiet segments cost nothing; fixed-interval billing starts at frame zero regardless of content.
+2. **motion_crop's token-neutrality verified**: A (full frames) and C (last-slot crop swap) feed identical frame counts (9=9) — the crop swap adds no frames; its payoff is effective resolution on small targets.
+3. **ego gating works but this footage is low-sensitivity**: 7 ego-suspect events under the task envelope, and no trigger points fell inside suspicion windows, so call counts stayed equal; gating correctness is covered by tests (vus ego_gate unit tests + the rvs zero-deliberation end-to-end test).
+4. Synthetic three-segment footage (deterministic) corroborates: fixed-interval 12 calls vs triggered 2 (−83%), with fixed-interval still billing through still segments.
+
 ## License
 
 MIT
