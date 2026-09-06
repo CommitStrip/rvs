@@ -71,7 +71,11 @@ def embed_texts_onnx(onnx_path, texts, tokenizer=None, batch: int = 8) -> np.nda
                                    providers=["CPUExecutionProvider"])
     in_specs = {i.name: i for i in session.get_inputs()}
     out_names = [o.name for o in session.get_outputs()]
-    text_out = next((n for n in out_names if "text" in n.lower()), None)
+    # 精确匹配嵌入输出（text_embeds/text_projection），排除 logits_per_text
+    # ——它是 [N_text, N_image] 相似度矩阵，不是嵌入
+    text_out = next((n for n in out_names
+                     if "logits" not in n.lower() and "text" in n.lower()
+                     and ("embed" in n.lower() or "proj" in n.lower())), None)
     if text_out is None:
         raise RuntimeError(
             f"模型 {onnx_path} 的输出不含文本嵌入（outputs={out_names}）；"
@@ -87,7 +91,11 @@ def embed_texts_onnx(onnx_path, texts, tokenizer=None, batch: int = 8) -> np.nda
                 feed[name] = chunk
             elif name == "attention_mask":
                 feed[name] = (chunk != 0).astype(np.int64)
-            elif len(shape) == 4 and shape[1] == 3:  # 图像输入 NCHW → 全零占位
+            elif ("pixel" in name.lower()
+                  or (len(shape) == 4 and isinstance(shape[1], int)
+                      and shape[1] == 3)):
+                # 图像输入（名字识别优先；NCHW 整型通道数兜底——动态维度
+                # 的导出如 ['image_batch_size','num_channels',...] 名字才可靠）
                 h = shape[2] if isinstance(shape[2], int) else 224
                 w = shape[3] if isinstance(shape[3], int) else 224
                 feed[name] = np.zeros((len(chunk), 3, h, w), dtype=np.float32)

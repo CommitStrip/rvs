@@ -123,22 +123,32 @@ def test_missing_vocab_raises_with_download_hint(tmp_path, monkeypatch):
         mod._load_tokenizer()
 
 
-# ---------- 集成测试：真模型 + 词表在场才跑 ----------
+# ---------- 集成测试：真模型 + 词表 + 嵌入缓存在场才跑 ----------
 
-def _model_available():
+def _real_assets_ready():
     from pathlib import Path
     import vus.clip_onnx as co
-    d = Path(co.resolve_model_dir(None))
-    return (d / "clip-visual-vitb32.onnx").is_file() and \
-        (Path(__file__).resolve().parents[1] / "rvs" / "_vendor"
-         / "bpe_simple_vocab_16e6.txt.gz").is_file()
+    root = Path(__file__).resolve().parents[1]
+    model_ok = (Path(co.resolve_model_dir(None)) / "clip-visual-vitb32.onnx").is_file()
+    vocab_ok = (root / "rvs" / "_vendor" / "bpe_simple_vocab_16e6.txt.gz").is_file()
+    cache_ok = _cache_path(Path(co.resolve_model_dir(None)),
+                           ["a person walking", "a moving car",
+                            "a dog running", "an empty corridor"],
+                           ["background, empty scene, nothing happening"]
+                           ).is_file()
+    return model_ok and vocab_ok and cache_ok
 
 
-@pytest.mark.skipif(not _model_available(), reason="CLIP ONNX/词表未下载")
-def test_integration_clip_tagger_end_to_end(tmp_path):
-    labels = ["a person", "a moving car", "an empty corridor"]
-    out = build_label_embeddings(labels, NEGATIVE, model_dir=tmp_path)
-    assert out.is_file()
-    tagger = CLIPTagger(labels, NEGATIVE, model_dir=tmp_path)
+@pytest.mark.skipif(not _real_assets_ready(),
+                    reason="CLIP ONNX/词表/嵌入缓存未准备（见 scripts/）")
+def test_integration_clip_tagger_end_to_end():
+    labels = ["a person walking", "a moving car", "a dog running",
+              "an empty corridor"]
+    negative = ["background, empty scene, nothing happening"]
+    tagger = CLIPTagger(labels, negative)          # model_dir 走默认解析
     res = tagger.label(np.full((240, 320, 3), 40, np.uint8))
     assert res and all(set(x) == {"label", "score"} for x in res)
+    scores = [x["score"] for x in res]
+    assert scores == sorted(scores, reverse=True)
+    assert all(0.0 <= s <= 1.0 for s in scores)
+    assert sum(scores) <= 1.0 + 1e-6               # top_k 截断的 softmax 子集
