@@ -22,12 +22,13 @@ rvs 只补机器人场景的缺口：
 """
 
 from .clip_labeler import CLIPTagger, build_label_embeddings, tokenize_batch
+from .intent_overlay import IntentOverlay
 from .panorama import EquirectFileSource, PanoramaSource, derotate, horizontal_band, yaw_to_shift
 from .periphery import PeripheralMonitor
 from .pipeline import DualCameraRig, RobotPipeline
 from .proprio import CommandState, EgoVerdict, ProprioGate
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "__version__",
@@ -40,4 +41,6 @@ __all__ = [
     # 外围视觉
     "PeripheralMonitor", "PanoramaSource", "EquirectFileSource",
     "derotate", "yaw_to_shift", "horizontal_band",
+    # 自我意图叠加（原创方向）
+    "IntentOverlay",
 ]

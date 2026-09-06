@@ -142,7 +142,7 @@ rvs **不捆绑任何模型**。槽位就是 vus 的后端注册表：`create_vl
 - [x] T0.5 的 CLIP 反射层：有界词表零样本打标、文本嵌入离线缓存、负标签过滤（`rvs.clip_labeler`）
 - [x] 慎思集成：`RobotPipeline.attach_understanding()` 把 vus `UnderstandingWorker` 挂上桥事件流；vus 侧 `ego_gate` 钩子在自我运动嫌疑窗口内延迟触发（素材照收不丢）
 - [x] 全景外围视觉：`EquirectFileSource`（yaw 注入/角速度合成）+ `PeripheralMonitor`（绝对 yaw 反卷绕条带帧差，静态世界严格静止）+ `DualCameraRig` 双相机编排——外围 `periphery_motion` 事件带世界方位角（col_ratio），供注意力转移决策
-- [ ] 自我意图渲染：把机器人规划路径投影进画面作为 VLM 的视觉标注（原创方向）
+- [x] 自我意图渲染：`IntentOverlay` 把机器人运动指令渲染成画面中的洋红虚线箭头（感知前经 `on_frame` 钩子替换帧），prompt 约定文本同步进 VLM 提示；真实路径投影（世界→图像）留 `render_path` 接口，`bench/intent_ab.py` 提供注意力 A/B 验证脚本（需真实 VLM 端点）
 - [ ] 平移的前馈运动补偿（指令运动学 → 单应 warp），恢复持续运动期的事件质量
 - [ ] MobileCLIP 换引擎（待许可解除——`apple-amlr` 权重仅限科研）
 
