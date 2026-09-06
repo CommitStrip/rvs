@@ -39,7 +39,7 @@ def horizontal_band(img: ArrayLike, top: float = 0.3, bottom: float = 0.7) -> np
 
 
 class PanoramaSource(ABC):
-    """全景帧源接口空位（真实相机接入后续实现）。
+    """全景帧源接口。
 
     约定实现方提供 equirectangular 全帧与当前 yaw（弧度）；
     外围运动检测应在 derotate(帧, yaw_to_shift(dyaw, 宽)) 之后执行，
@@ -50,3 +50,45 @@ class PanoramaSource(ABC):
     def read_panorama(self) -> Tuple[bool, np.ndarray, float, float]:
         """返回 (ok, equirect_bgr, yaw_rad, timestamp)。"""
         raise NotImplementedError
+
+    def open(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        pass
+
+
+class EquirectFileSource(PanoramaSource):
+    """equirect 全景视频文件源（辅助外围视觉通道的实现）。
+
+    yaw 来源二选一：
+      - yaw_provider(t) -> float：机器人本体朝向回调（真实部署）；
+      - angular_rate_rad_s：恒定角速度合成（测试/demo，yaw = yaw0 + rate*t）。
+    帧读取复用 vus FileSource；相机/RTSP 全景源同构扩展。
+    """
+
+    def __init__(self, path, yaw_provider=None, angular_rate_rad_s: float = 0.0,
+                 yaw0: float = 0.0, realtime: bool = False):
+        from vus.source import FileSource
+        self._file = FileSource(path, realtime=realtime)
+        self._yaw_provider = yaw_provider
+        self._rate = float(angular_rate_rad_s)
+        self._yaw0 = float(yaw0)
+        self._last_yaw = self._yaw0
+
+    def open(self) -> bool:
+        return self._file.open()
+
+    def close(self) -> None:
+        self._file.close()
+
+    def read_panorama(self) -> Tuple[bool, np.ndarray, float, float]:
+        ok, frame, t = self._file.read()
+        if not ok:
+            return (False, None, self._last_yaw, t)
+        if self._yaw_provider is not None:
+            yaw = float(self._yaw_provider(t))
+        else:
+            yaw = self._yaw0 + self._rate * t
+        self._last_yaw = yaw
+        return (True, frame, yaw, t)

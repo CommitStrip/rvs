@@ -24,6 +24,7 @@ import cv2
 from vus.live.events import EventBus
 from vus.smart_pipeline import SmartPipeline
 
+from .periphery import PeripheralMonitor
 from .proprio import CommandState, ProprioGate
 
 EgoProvider = Callable[[float], Optional[CommandState]]
@@ -61,9 +62,11 @@ class RobotPipeline:
             {k: cfg[k] for k in _PERCEPTION_KEYS if k in cfg})
         self.bus = EventBus()
 
-    def run(self, max_frames: Optional[int] = None) -> dict:
+    def run(self, max_frames: Optional[int] = None, on_frame=None) -> dict:
         """同步驱动直至源结束或 max_frames；返回摘要 dict。
 
+        on_frame(frame, t) -> Optional[frame]：逐帧钩子（DualCameraRig 的
+        全景泵、AR 叠加等在此挂）；返回非 None 时替换本帧进入感知。
         回放源（vus FileSource）每次 run 都从头完整回放（open 重置时间轴）。
         """
         started = time.monotonic()
@@ -81,6 +84,11 @@ class RobotPipeline:
                 if not ok:
                     break
                 frames += 1
+                # 逐帧钩子：帧在手（全景泵/AR 叠加在此挂；可替换帧）
+                if on_frame is not None:
+                    replaced = on_frame(frame, t)
+                    if replaced is not None:
+                        frame = replaced
                 # 本体感受：控制端接入点（先更新，再对本帧判定）
                 if self.ego_provider is not None:
                     cmd = self.ego_provider(t)
@@ -148,8 +156,8 @@ class RobotPipeline:
 
         vus 侧 ego_gate 钩子已生效：自我运动嫌疑窗口内的触发被降权，
         素材不丢（合并语义）。返回已 start 的 worker（daemon 线程，
-        宿主负责 stop()）；understanding 结果既进 worker.results 也以
-        {"type": "understanding", ...} 事件回到本桥总线。
+        宿主负责 stop()）；understanding 结论以 {"type": "understanding",
+        ...} 事件回到本桥总线，并写入 worker 的 SessionState。
         """
         from vus.live.state import SessionState
         from vus.live.understanding import UnderstandingWorker
@@ -169,3 +177,39 @@ class RobotPipeline:
         if abs(cmd.linear_v) > 1e-9:
             return "直行 %.2fm/s" % cmd.linear_v
         return "静止"
+
+
+class DualCameraRig:
+    """双相机编排：主相机（中央凹，RobotPipeline 全链）+ 全景辅助
+    （外围视觉，PeripheralMonitor）。
+
+    主相机逐帧为节拍基准，每帧经 on_frame 钩子同步泵一次全景；
+    外围注意力转移事件（periphery_motion）进主总线，供虚拟 PTZ /
+    注意力转移决策。外围事件计数并入 run 摘要。
+    """
+
+    def __init__(self, main: RobotPipeline, pano_source, monitor=None):
+        self.main = main
+        self.pano = pano_source
+        self.monitor = monitor if monitor is not None else PeripheralMonitor()
+        self.periphery_events = 0
+
+    def _pump(self, _frame, _t):
+        ok, equirect, yaw, pt = self.pano.read_panorama()
+        if not ok:
+            return None                     # 全景帧缺失不拖累主链
+        for ev in self.monitor.process(equirect, yaw, pt):
+            self.periphery_events += 1
+            self.main.bus.publish(ev)
+        return None                         # 不替换主相机帧
+
+    def run(self, max_frames: Optional[int] = None) -> dict:
+        if not self.pano.open():
+            return {"ok": False, "error": "全景源打开失败"}
+        self.periphery_events = 0
+        try:
+            summary = self.main.run(max_frames=max_frames, on_frame=self._pump)
+        finally:
+            self.pano.close()
+        summary["periphery_events"] = self.periphery_events
+        return summary

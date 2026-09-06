@@ -22,20 +22,22 @@ rvs 只补机器人场景的缺口：
 """
 
 from .clip_labeler import CLIPTagger, build_label_embeddings, tokenize_batch
-from .panorama import PanoramaSource, derotate, horizontal_band, yaw_to_shift
-from .pipeline import RobotPipeline
+from .panorama import EquirectFileSource, PanoramaSource, derotate, horizontal_band, yaw_to_shift
+from .periphery import PeripheralMonitor
+from .pipeline import DualCameraRig, RobotPipeline
 from .proprio import CommandState, EgoVerdict, ProprioGate
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "__version__",
     # 本体系（核心增量）
     "CommandState", "EgoVerdict", "ProprioGate",
-    # 机器人桥
-    "RobotPipeline",
+    # 机器人桥与双相机编排
+    "RobotPipeline", "DualCameraRig",
     # 语义反射弧（T0.5）
     "CLIPTagger", "build_label_embeddings", "tokenize_batch",
     # 外围视觉
-    "PanoramaSource", "derotate", "yaw_to_shift", "horizontal_band",
+    "PeripheralMonitor", "PanoramaSource", "EquirectFileSource",
+    "derotate", "yaw_to_shift", "horizontal_band",
 ]
