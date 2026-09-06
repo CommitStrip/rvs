@@ -185,3 +185,55 @@ def test_ego_suspect_defers_deliberation_trigger(synthetic_video, tmp_path):
         assert all(Path(p).exists() for _t, p in worker._win.kf)
     finally:
         worker.stop()
+
+
+# ---------- W-F：本体状态行通道（ego_state 事件 → 慎思 prompt） ----------
+
+def test_ego_state_published_only_on_change(synthetic_video):
+    """本体状态行变化节流：静止→直行→静止 → 恰 2 条 ego_state 事件。"""
+    def ego(t):
+        if 1.0 <= t < 2.0:
+            return CommandState(t=t, linear_v=0.6)
+        return CommandState(t=t)                            # 静止
+
+    p = RobotPipeline(FileSource(synthetic_video), ego_provider=ego)
+    sub = p.bus.subscribe()
+    summary = p.run()
+    states = [e for e in sub.drain() if e["type"] == "ego_state"]
+    assert len(states) == 3                                 # ""→静止→直行→静止
+    assert states[0]["line"] == "静止"
+    assert "直行" in states[1]["line"]
+    assert len(states) < summary["frames"]                  # 节流：远小于帧数
+
+
+def test_no_ego_provider_publishes_no_ego_state(synthetic_video):
+    p = RobotPipeline(FileSource(synthetic_video))
+    sub = p.bus.subscribe()
+    p.run()
+    assert not [e for e in sub.drain() if e["type"] == "ego_state"]  # 回归
+
+
+def test_proprio_line_reaches_deliberation_prompt(synthetic_video, tmp_path):
+    """端到端：本体状态行经 ego_state 进素材窗、出现在 VLM prompt。"""
+    from vus.live.state import SessionState
+    from vus.live.vlm_client import MockVLM as VusMock
+
+    def ego(t):
+        if 1.0 <= t < 2.0:
+            return CommandState(t=t, linear_v=0.6)
+        return CommandState(t=t)
+
+    state = SessionState()
+    vlm = VusMock()
+    pipe = RobotPipeline(FileSource(synthetic_video), ego_provider=ego,
+                         out_dir=tmp_path)
+    worker = pipe.attach_understanding(state=state, vlm=vlm)
+    try:
+        pipe.run()
+        worker.wait_idle(timeout=10.0)
+        assert vlm.calls
+        # 通道打通：prompt 出现本体状态行（值为触发时刻的最新状态——
+        # 触发点在收尾静止段时报"静止"，语义正确）
+        assert any("【本体状态】" in c["prompt"] for c in vlm.calls)
+    finally:
+        worker.stop()

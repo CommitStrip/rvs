@@ -54,6 +54,7 @@ class RobotPipeline:
         self.ego_provider = ego_provider
         self.labeler = labeler
         self.out_dir = out_dir
+        self._last_proprio_line = ""
         self.gate = ProprioGate(
             window_s=cfg.get("proprio_window_s", 0.6),
             angular_thresh=cfg.get("proprio_angular_thresh", 0.15),
@@ -94,6 +95,13 @@ class RobotPipeline:
                     cmd = self.ego_provider(t)
                     if cmd is not None:
                         self.gate.update(cmd)
+                    # 本体状态行变化节流发布（慎思素材窗的归因上下文通道，
+                    # vus ego_state 事件 → UnderstandingWindow.proprio_line）
+                    line = self.proprio_line()
+                    if line != self._last_proprio_line:
+                        self._last_proprio_line = line
+                        self.bus.publish({"type": "ego_state", "t": t,
+                                          "line": line})
                 verdict = self.gate.verdict(t)
                 for ev in self.perception.process_frame(frame, t):
                     etype = ev.get("type", "")
