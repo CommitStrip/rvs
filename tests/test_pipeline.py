@@ -37,7 +37,9 @@ def test_turning_provider_marks_suspects(synthetic_video):
                                                  "motion_end")]
     assert motion
     assert all(e["ego_suspect"] is True for e in motion)
-    assert summary["ego_suspect_events"] == len(motion)
+    suspects = [e for e in events if e.get("ego_suspect")]
+    # 嫌疑计数含 motion 族与 keyframe（scene_change 在嫌疑窗口内同样标注）
+    assert summary["ego_suspect_events"] == len(suspects) == len(motion) + 2
     assert p.proprio_line() == "左转 0.80rad/s 0.00m/s"
 
 

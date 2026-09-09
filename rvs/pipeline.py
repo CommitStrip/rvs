@@ -108,7 +108,9 @@ class RobotPipeline:
                     counts[etype] = counts.get(etype, 0) + 1
                     if "motion_ratio" in ev:
                         last_motion_ratio = ev["motion_ratio"]
-                    if etype in _MOTION_TYPES:
+                    if etype in _MOTION_TYPES or etype == "keyframe":
+                        # keyframe 也要打标：scene_change 在嫌疑窗口内大概率
+                        # 只是视角转移——vus ego_gate 在该触发点读 ego_suspect
                         ev["ego_suspect"] = verdict.ego_suspect
                         ev["ego_reason"] = verdict.reason
                         if verdict.ego_suspect:
