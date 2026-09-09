@@ -47,10 +47,60 @@ def test_prompt_note_is_the_semantic_anchor():
     assert "洋红" in note and "自身" in note and "静止" in note
 
 
-def test_render_path_draws_dashed_polyline():
+def _plan_green_count(frame):
+    return int(((frame[:, :, 1] > 180) & (frame[:, :, 0] < 140)
+                & (frame[:, :, 2] < 140)).sum())
+
+
+def test_render_path_draws_plan_polyline():
     out = IntentOverlay().render_path(np.zeros((240, 320, 3), np.uint8),
                                       [(50, 200), (120, 150), (200, 120)])
-    assert _magenta_mask(out).sum() > 30               # 路径虚线有像素
+    assert _plan_green_count(out) > 30               # 计划轨迹绿色虚线
+
+
+# ---------- W-G2 运动规划图（render_plan 主链） ----------
+
+def test_plan_path_straight_is_vertical_line():
+    from rvs.intent_overlay import plan_path
+    pts = plan_path(CommandState(t=0.0, linear_v=0.6, angular_v=0.0),
+                    horizon_s=2.0, dt=0.5)
+    assert pts[0] == (0.0, 0.0, 0.0)
+    assert all(abs(x) < 1e-9 for x, _y, _t in pts)   # 直行：无横向偏移
+    assert pts[-1][1] > 0                            # 前进为正
+
+
+def test_plan_path_turn_bends_toward_direction():
+    from rvs.intent_overlay import plan_path
+    left = plan_path(CommandState(t=0.0, linear_v=0.6, angular_v=0.8),
+                     horizon_s=2.0, dt=0.5)
+    assert any(x < -1e-3 for x, _y, _t in left)      # 左转：横向向左（负）
+    right = plan_path(CommandState(t=0.0, linear_v=0.6, angular_v=-0.8),
+                      horizon_s=2.0, dt=0.5)
+    assert any(x > 1e-3 for x, _y, _t in right)      # 右转：横向向右
+
+
+def _magenta_count(frame):
+    return _magenta_mask(frame).sum()
+
+
+def test_render_plan_draws_corridor_and_time_marks():
+    out = IntentOverlay().render_plan(
+        np.zeros((320, 480, 3), np.uint8),
+        CommandState(t=0.0, linear_v=0.6, angular_v=0.0))
+    assert _plan_green_count(out) > 50               # 中心轨迹
+    blue = int(((out[:, :, 0] > 200) & (out[:, :, 1] < 200)
+                & (out[:, :, 2] < 120)).sum())
+    assert blue > 10                                 # 时间标记（COLOR_TIME_BGR 蓝）
+    # 走廊淡绿带（0.35 blend 后 ≈(42,115,56)，与主线/图例色分离）
+    faint = int(((out[:, :, 0] < 100) & (out[:, :, 1] > 80)
+                 & (out[:, :, 1] < 200) & (out[:, :, 2] < 100)).sum())
+    assert faint > 100
+
+
+def test_render_plan_stationary_falls_back_to_arrow():
+    out = IntentOverlay().render_plan(
+        np.zeros((240, 320, 3), np.uint8), CommandState(t=0.0))
+    assert _magenta_count(out) < 50                  # 静止：退化意图图例
 
 
 def test_on_frame_hook_replaces_frame_before_perception(synthetic_video, tmp_path):

@@ -27,6 +27,33 @@ import numpy as np
 
 from .proprio import CommandState
 
+COLOR_PLAN_BGR = (80, 220, 80)        # 绿色：计划轨迹
+COLOR_CORRIDOR_BGR = (120, 255, 160)  # 淡绿：占用走廊
+COLOR_TIME_BGR = (255, 160, 60)       # 蓝橙：时间标记
+
+
+def plan_path(cmd: CommandState, horizon_s: float = 2.0,
+              dt: float = 0.25) -> list:
+    """差速模型路径预测（机器人坐标系：x 右正、y 前进正，单位米；
+    theta 左转（angular_v>0）为正）。返回 [(x, y, t), ...] 含起点；
+    纯转向（v≈0）画收敛小弧。
+    真实规划器的路径点经 project_path/render_path 注入，不走本模型。
+    """
+    import math
+    pts = []
+    x = y = 0.0
+    theta = 0.0
+    t = 0.0
+    v = float(cmd.linear_v)
+    w = float(cmd.angular_v)
+    while t <= horizon_s + 1e-9:
+        pts.append((x, y, round(t, 3)))
+        x += -v * math.sin(theta) * dt       # 横向（右为正；左转向左偏）
+        y += v * math.cos(theta) * dt        # 前向
+        theta += w * dt
+        t += dt
+    return pts
+
 
 class IntentOverlay:
     """运动意图渲染器（无状态，可安全共享）。"""
@@ -64,14 +91,60 @@ class IntentOverlay:
 
     def render_path(self, frame_bgr: np.ndarray,
                     image_points: Sequence[Tuple[int, int]]) -> np.ndarray:
-        """真实规划路径投影（接口空位）：画面坐标点串 → 洋红虚线。
-
-        世界→图像的投影需要相机标定，由上层完成后再调本方法。
-        """
+        """真实规划器路径投影（接口）：画面坐标点串 → 绿色虚线。"""
         out = frame_bgr.copy()
         pts = [(int(x), int(y)) for x, y in image_points]
         for a, b in zip(pts[:-1], pts[1:]):
-            self._dashed_line(out, a, b)
+            self._dashed_line(out, a, b, COLOR_PLAN_BGR)
+        return out
+
+    def render_plan(self, frame_bgr: np.ndarray, cmd: CommandState,
+                    horizon_s: float = 2.0, robot_width_m: float = 0.4,
+                    px_per_m: Optional[float] = None,
+                    time_marks: Sequence[float] = (0.5, 1.0, 2.0)) -> np.ndarray:
+        """行动条件化视图主入口：运动规划图——计划轨迹（绿）+ 机器人
+        占用走廊（淡绿带）+ 时间标记点。
+
+        运动学骨架版：差速模型积分生成路径；真实规划器的路径经
+        render_path(points) 注入（世界→图像标定由上层完成）。
+        静止指令（无位移）退化为意图箭头（render）。
+        """
+        pts = plan_path(cmd, horizon_s)
+        moved = any(abs(x) > 1e-6 or abs(y) > 1e-6 for x, y, _t in pts[1:])
+        if not moved:
+            return self.render(frame_bgr, cmd)
+        h, w = frame_bgr.shape[:2]
+        span = max(max(abs(x), abs(y)) for x, y, _t in pts) or 1.0
+        scale = float(px_per_m) if px_per_m else (h * 0.55) / span
+        origin = (w // 2, int(h * 0.8))
+        pixel_pts = [(origin[0] + int(x * scale),
+                      origin[1] - int(y * scale), t) for x, y, t in pts]
+
+        out = frame_bgr.copy()
+        corridor_px = max(3, int(robot_width_m * scale))
+        # 占用走廊：粗半透明带（独立图层 blend，避免遮死画面）
+        band = frame_bgr.copy()
+        for (ax, ay, _ta), (bx, by, _tb) in zip(pixel_pts[:-1], pixel_pts[1:]):
+            cv2.line(band, (ax, ay), (bx, by), COLOR_CORRIDOR_BGR,
+                     corridor_px, lineType=cv2.LINE_AA)
+        out = cv2.addWeighted(band, 0.35, out, 0.65, 0)
+        # 中心轨迹：实线绿色
+        for (ax, ay, _ta), (bx, by, _tb) in zip(pixel_pts[:-1], pixel_pts[1:]):
+            cv2.line(out, (ax, ay), (bx, by), COLOR_PLAN_BGR,
+                     max(2, self.thickness), lineType=cv2.LINE_AA)
+        # 时间标记：空心圆 + 秒数
+        for (px, py, t) in pixel_pts:
+            if any(abs(t - tm) < 1e-6 for tm in time_marks):
+                cv2.circle(out, (px, py), max(6, corridor_px // 2),
+                           COLOR_TIME_BGR, 2, lineType=cv2.LINE_AA)
+                cv2.putText(out, f"{t:.1f}s", (px + 6, py - 6),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                            COLOR_TIME_BGR, 1, cv2.LINE_AA)
+        # 终点实心标记
+        ex, ey, _et = pixel_pts[-1]
+        cv2.circle(out, (ex, ey), 5, COLOR_PLAN_BGR, -1)
+        if self.legend:
+            self._draw_legend(out, "PLAN: " + self._label(cmd))
         return out
 
     @staticmethod
@@ -113,8 +186,9 @@ class IntentOverlay:
                     int(end[1] + 18 * math.sin(ang + da)))
             cv2.line(img, end, wing, self.COLOR_BGR, self.thickness)
 
-    def _dashed_line(self, img, start, end):
+    def _dashed_line(self, img, start, end, color=None):
         import math
+        color = color if color is not None else self.COLOR_BGR
         dx, dy = end[0] - start[0], end[1] - start[1]
         dist = max(1.0, math.hypot(dx, dy))
         steps = max(1, int(dist // self.dash))
@@ -124,7 +198,7 @@ class IntentOverlay:
                  int(start[1] + uy * i * self.dash))
             b = (int(start[0] + ux * min(i + 1, steps) * self.dash),
                  int(start[1] + uy * min(i + 1, steps) * self.dash))
-            cv2.line(img, a, b, self.COLOR_BGR, self.thickness)
+            cv2.line(img, a, b, color, self.thickness)
 
     def _draw_legend(self, img, text: str):
         cv2.putText(img, text, (12, 28), cv2.FONT_HERSHEY_SIMPLEX,
