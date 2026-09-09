@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """intent_ab.py - AR 自我意图叠加的 VLM 注意力 A/B（原创方向验证）。
 
-对比同一运动帧的「原帧 vs 意图叠加帧」在 VLM 输出中的归因差异：
-叠加帧的回复应正确提及机器人自身意图（如"机器人正要左转"），
-原帧则只能从画面内容猜测。需要真实 VLM 端点（凭据全走环境变量，
-源码无凭据字面量）。
+对比同一运动帧在不同视图变体下 VLM 的归因差异：
+  original     无叠加（基线——世界归因只能靠猜）
+  arrow_overlay 洋红意图箭头（瞬时意图）
+  plan_overlay  运动规划图（轨迹+走廊+时间标记）
 
-环境变量：VLM_API_BASE / VLM_API_KEY / VLM_MODEL
+可控场景矩阵（逐项跑 --video 单场景素材，记录 path_risk 判读）：
+  路径穿过障碍 / 路径擦边 / 计划方向与目标不符 /
+  动态物体进入计划走廊 / 原地转向 / 视觉遮挡
+
+需要真实 VLM 端点（凭据全走环境变量，源码无凭据字面量）：
+  VLM_API_BASE / VLM_API_KEY / VLM_MODEL
 用法:
-  python bench/intent_ab.py --video 场景视频.avi --turn left
-输出：两组回复原文 + 简单关键词归因比对（人工判读为主）。
+  python bench/intent_ab.py --video 场景视频.avi --turn left --mode both
 """
 import argparse
 import os
@@ -43,6 +47,9 @@ def main():
     ap.add_argument("--video", required=True)
     ap.add_argument("--at", type=float, default=1.0, help="取帧时刻（秒）")
     ap.add_argument("--turn", choices=["left", "right", "forward"], default="left")
+    ap.add_argument("--mode", choices=["arrow", "plan", "both"], default="plan",
+                    help="叠加变体：arrow=意图箭头 / plan=运动规划图 / "
+                         "both=两者都对比（A/B 矩阵）")
     args = ap.parse_args()
 
     frame = _grab_frame(args.video, args.at)
@@ -51,14 +58,19 @@ def main():
                        linear_v=0.0 if args.turn in ("left", "right") else 0.8,
                        turning=args.turn in ("left", "right"))
     overlay = IntentOverlay()
-    frames = {"original": frame, "with_intent": overlay.render(frame, cmd)}
+    frames = {"original": frame}                 # 基线：无叠加
+    if args.mode in ("arrow", "both"):
+        frames["arrow_overlay"] = overlay.render(frame, cmd)
+    if args.mode in ("plan", "both"):
+        frames["plan_overlay"] = overlay.render_plan(frame, cmd)
     note = IntentOverlay.prompt_note()
 
     vlm = create_vlm("openai")  # 端点/密钥/模型全走环境变量
     for name, f in frames.items():
         prompt = (f"你在一台移动机器人上。{note}\n"
                   "只输出 JSON：{\"what\": \"画面在发生什么\", "
-                  "\"robot_intent\": \"机器人自己要做什么\"}")
+                  "\"robot_intent\": \"机器人自己要做什么\", "
+                  "\"path_risk\": \"计划路径与画面物体的空间关系\"}")
         text = vlm.understand(prompt, (encode_frame_b64_frame(f),), timeout=60)
         print(f"===== {name} =====")
         print(text.strip() or "（空回复）")

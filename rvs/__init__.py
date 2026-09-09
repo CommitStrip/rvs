@@ -22,18 +22,18 @@ rvs 只补机器人场景的缺口：
 """
 
 from .clip_labeler import CLIPTagger, build_label_embeddings, tokenize_batch
-from .intent_overlay import IntentOverlay
+from .intent_overlay import IntentOverlay, plan_path
 from .panorama import EquirectFileSource, PanoramaSource, derotate, horizontal_band, yaw_to_shift
 from .periphery import PeripheralMonitor
 from .pipeline import DualCameraRig, RobotPipeline
-from .proprio import CommandState, EgoVerdict, ProprioGate
+from .proprio import CommandState, EgoState, EgoStateProvider, EgoVerdict, ProprioGate
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "__version__",
     # 本体系（核心增量）
-    "CommandState", "EgoVerdict", "ProprioGate",
+    "CommandState", "EgoState", "EgoStateProvider", "EgoVerdict", "ProprioGate",
     # 机器人桥与双相机编排
     "RobotPipeline", "DualCameraRig",
     # 语义反射弧（T0.5）
@@ -41,6 +41,6 @@ __all__ = [
     # 外围视觉
     "PeripheralMonitor", "PanoramaSource", "EquirectFileSource",
     "derotate", "yaw_to_shift", "horizontal_band",
-    # 自我意图叠加（原创方向）
-    "IntentOverlay",
+    # 行动条件化视图（原创方向）
+    "IntentOverlay", "plan_path",
 ]

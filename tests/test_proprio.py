@@ -49,3 +49,21 @@ def test_turning_flag_counts_as_angular():
     v = gate.verdict(2.0)
     assert v.ego_suspect is True
     assert v.reason == "angular_rate"
+
+
+# ---------- W-G5 多源本体状态接口（EgoStateProvider 空位） ----------
+
+def test_ego_state_extends_command_state():
+    from rvs.proprio import EgoState
+    s = EgoState(t=1.0, linear_v=0.5, confidence=0.9,
+                 sources={"odometry": 0.5})
+    assert isinstance(s, CommandState)          # 兼容现有门控输入
+    assert s.confidence == 0.9
+    assert s.sources["odometry"] == 0.5
+
+
+def test_ego_state_provider_is_explicit_slot():
+    import pytest
+    from rvs.proprio import EgoStateProvider
+    with pytest.raises(NotImplementedError, match="W-G5"):
+        EgoStateProvider().sample(1.0)

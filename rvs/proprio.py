@@ -10,7 +10,7 @@ proprio.py - 本体感受通道
 后续接运动补偿 warp（见 README 路线图）。
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -22,6 +22,34 @@ class CommandState:
     linear_v: float = 0.0     # m/s，前进为正
     angular_v: float = 0.0    # rad/s，左转（逆时针）为正
     turning: bool = False     # 控制端显式转向标志（可选）
+
+
+@dataclass
+class EgoState(CommandState):
+    """机器人真实运动状态（W-G5 多源融合接口）。
+
+    指令（CommandState）只是先验之一：指令≠实际运动≠相机运动——
+    打滑、惯性、外力推动都会使三者偏离。多源适配器（轮式里程计/IMU/
+    视觉里程计/云台编码器）把测量值填进本结构；confidence 为自运动
+    置信度（0~1，多源一致时升高），供下游从布尔嫌疑演进为概率判定。
+    """
+
+    confidence: float = 0.5          # 自运动状态置信度（先验=0.5）
+    sources: dict = field(default_factory=dict)  # {"odometry": v, "imu": w, ...}
+
+
+class EgoStateProvider:
+    """多源本体状态适配器接口（W-G5 空位）。
+
+    实现方按时间戳采样机器人真实运动（轮式里程计/IMU/视觉里程计等），
+    供 ProprioGate 从"指令先验"演进为"测量事实"。当前 ProprioGate
+    仍吃 CommandState（指令先验）；本接口为融合演进预留稳定槽位。
+    """
+
+    def sample(self, t: float) -> EgoState:
+        raise NotImplementedError(
+            "EgoStateProvider 为 W-G5 预留接口：实现 sample(t) 返回"
+            "带 confidence 与多源数据的 EgoState（odometry/IMU 适配器待接）。")
 
 
 @dataclass
