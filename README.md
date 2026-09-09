@@ -43,7 +43,7 @@ A robot's motion is **commanded by itself** — a known quantity, not something 
 
 - **Command time window** — frames within `window_s` after a motion command are flagged (`command_window`);
 - **Rate thresholds** — sustained angular/linear speed above threshold keeps frames flagged (`angular_rate` / `linear_rate`);
-- **Stationary commands never flag** — after a stop command, frame change is *certainly* the world, so no suspicion.
+- **Stationary commands default to no suspicion** — after a stop command the robot stops *producing* frame change (an engineering prior, not a fact: braking inertia, body sway and gimbal recentering can still leave residual motion; strict deployments should add odometry/IMU zero-velocity checks — see roadmap: multi-source EgoStateProvider).
 
 The verdict rides on the event stream as `ego_suspect` / `ego_reason` fields — **no warp, no optical flow**. The perception pipeline stays untouched; downstream consumers (reflection layer, VLM prompt builder, navigation) decide how to discount flagged events.
 
@@ -159,7 +159,7 @@ Three baselines × **13.4-min 1080p real footage** (25fps / 20002 frames), measu
 *Realtime× is this machine's mock figure (no network round-trip); not comparable with vus's 4.7× benchmark-machine figure.
 
 **Findings**:
-1. **Event triggering saves 95% of VLM calls vs fixed-interval** (161→8): the 8s floor interval caps the worst-case cost (duration/interval × unit price) and quiet segments cost nothing; fixed-interval billing starts at frame zero regardless of content.
+1. **vus's event triggering saves 95% of VLM calls vs fixed-interval** (161→8): the 8s floor interval caps the worst-case cost (duration/interval × unit price) and quiet segments cost nothing; fixed-interval billing starts at frame zero regardless of content. **This benefit belongs to vus's scheduling design** — rvs's ego gating added zero extra call savings on this sample (see finding 3); its correctness is covered by synthetic and end-to-end tests and is not yet quantified on real moving-robot footage.
 2. **motion_crop's token-neutrality verified**: A (full frames) and C (last-slot crop swap) feed identical frame counts (9=9) — the crop swap adds no frames; its payoff is effective resolution on small targets.
 3. **ego gating works but this footage is low-sensitivity**: 7 ego-suspect events under the task envelope, and no trigger points fell inside suspicion windows, so call counts stayed equal; gating correctness is covered by tests (vus ego_gate unit tests + the rvs zero-deliberation end-to-end test).
 4. Synthetic three-segment footage (deterministic) corroborates: fixed-interval 12 calls vs triggered 2 (−83%), with fixed-interval still billing through still segments.

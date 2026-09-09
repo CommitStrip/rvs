@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "rvs contributors" }]
 keywords = ["robot", "video-understanding", "realtime", "ego-motion", "vlm"]
 dependencies = [
-    "vus @ git+https://github.com/CommitStrip/video-understanding-skill.git",
+    "vus @ git+https://github.com/CommitStrip/video-understanding-skill.git@01d1f10",
 ]
 
 [project.optional-dependencies]
