@@ -45,15 +45,20 @@ class RobotPipeline:
 
     def __init__(self, source, ego_provider: Optional[EgoProvider] = None,
                  config: Optional[dict] = None,
-                 labeler=None, out_dir=None):
+                 labeler=None, out_dir=None, overlay=None):
         """labeler: T0.5 打标器实例（None=不打标；如 CLIPTagger / BasicLabeler），
         在关键帧时刻调用 label(frame, motion_ratio) 并发布 tag 事件；
-        out_dir: 关键帧落盘目录（None=只打标不落盘，打标与落盘解耦）。"""
+        out_dir: 关键帧落盘目录（None=只打标不落盘，打标与落盘解耦）；
+        overlay: IntentOverlay 实例——行动条件化视图渲染器。激活时（需
+        out_dir）关键帧落盘两份：原帧（证据，raw_path）与叠加帧（模型视图，
+        path）。感知/打标永远吃原帧，叠加只进 VLM 素材——箭头不得污染
+        运动检测与 CLIP。"""
         cfg = dict(config or {})
         self.source = source
         self.ego_provider = ego_provider
         self.labeler = labeler
         self.out_dir = out_dir
+        self.overlay = overlay
         self._last_proprio_line = ""
         self.gate = ProprioGate(
             window_s=cfg.get("proprio_window_s", 0.6),
@@ -119,7 +124,7 @@ class RobotPipeline:
                         keyframes += 1
                         kf_path = (self._save_keyframe(frame, keyframes, t)
                                    if self.out_dir is not None else "")
-                        # 打标与落盘解耦：不落盘也打标（反射弧热路径）
+                        # 打标与落盘解耦：反射弧吃原帧（不受叠加污染）
                         if self.labeler is not None:
                             t0 = time.perf_counter()
                             label_out = self.labeler.label(frame, last_motion_ratio)
@@ -129,8 +134,21 @@ class RobotPipeline:
                                 "type": "tag", "t": t, "labels": label_out,
                                 "source": getattr(self.labeler, "name", "custom"),
                                 "ms": ms})
-                        self.bus.publish(
-                            dict(ev, path=kf_path) if kf_path else ev)
+                        # 双通道：VLM 素材吃行动条件化视图（叠加帧，行动意图
+                        # 投影进视觉），原帧作为传感器证据另存——路径语义
+                        # path = 模型视图帧，raw_path = 原始帧
+                        vlm_path = kf_path
+                        if self.overlay is not None and kf_path:
+                            overlay_path = self._save_overlay_frame(
+                                self.overlay.render(frame, self.gate.last_cmd),
+                                keyframes, t)
+                            if overlay_path:
+                                vlm_path = overlay_path
+                        if kf_path:
+                            out_ev = dict(ev, path=vlm_path, raw_path=kf_path)
+                            self.bus.publish(out_ev)
+                        else:
+                            self.bus.publish(ev)
                         continue
                     self.bus.publish(ev)
         finally:
@@ -150,6 +168,20 @@ class RobotPipeline:
             if not ok:
                 return ""
             buf.tofile(str(p))       # 中文路径安全（imencode+tofile）
+            return str(p)
+        except OSError:
+            return ""
+
+    def _save_overlay_frame(self, frame, index: int, t: float) -> str:
+        """行动条件化视图（模型视图）落盘，失败返回空串回退原帧素材。"""
+        p = Path(self.out_dir) / "keyframes" / ("overlay_%04d_t%.1fs.jpg"
+                                                % (index, t))
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            ok, buf = cv2.imencode(p.suffix or ".jpg", frame)
+            if not ok:
+                return ""
+            buf.tofile(str(p))
             return str(p)
         except OSError:
             return ""

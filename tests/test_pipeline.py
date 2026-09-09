@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import cv2
+
 from vus.source import FileSource
 
 from rvs.pipeline import RobotPipeline
@@ -93,11 +95,18 @@ class _FakeLabeler:
 
     def __init__(self):
         self.calls = []
+        self.frames = []
 
     def label(self, frame_bgr, motion_ratio=0.0, **kw):
         self.calls.append({"motion_ratio": motion_ratio,
                            "shape": frame_bgr.shape[:2]})
+        self.frames.append(frame_bgr)
         return [{"label": "a moving car", "score": 0.9}]
+
+
+def _magenta_count(frame):
+    return int(((frame[:, :, 2] > 200) & (frame[:, :, 0] > 200)
+                & (frame[:, :, 1] < 120)).sum())
 
 
 def test_labeler_wiring_publishes_tag_events(synthetic_video, tmp_path):
@@ -239,3 +248,53 @@ def test_proprio_line_reaches_deliberation_prompt(synthetic_video, tmp_path):
         assert any("【本体状态】" in c["prompt"] for c in vlm.calls)
     finally:
         worker.stop()
+
+
+# ---------- W-G1 双通道：模型视图（叠加帧）与传感器证据（原帧）分离 ----------
+
+def test_overlay_dual_channel(synthetic_video, tmp_path):
+    """叠加帧只进 VLM 素材（path），原帧是证据（raw_path）且打标吃原帧。"""
+    from rvs.intent_overlay import IntentOverlay
+
+    def ego(t):
+        return CommandState(t=t, linear_v=0.8)      # 直行 → 箭头必现
+
+    lb = _FakeLabeler()
+    p = RobotPipeline(FileSource(synthetic_video), ego_provider=ego,
+                      labeler=lb, out_dir=tmp_path,
+                      overlay=IntentOverlay())
+    sub = p.bus.subscribe()
+    summary = p.run()
+    evs = sub.drain()
+    kfs = [e for e in evs if e["type"] == "keyframe"]
+    assert summary["ok"] and kfs
+    for e in kfs:
+        assert Path(e["path"]) != Path(e["raw_path"])   # 双通道分离
+        overlay_img = cv2.imread(e["path"])
+        raw_img = cv2.imread(e["raw_path"])
+        assert _magenta_count(overlay_img) > 0          # 模型视图带意图箭头
+        assert _magenta_count(raw_img) == 0             # 证据帧无污染
+    # 反射弧吃原帧：labeler 收到的帧无洋红
+    assert lb.frames and all(_magenta_count(f) == 0 for f in lb.frames)
+
+
+def test_no_overlay_keeps_single_path(synthetic_video, tmp_path):
+    lb = _FakeLabeler()
+    p = RobotPipeline(FileSource(synthetic_video), labeler=lb, out_dir=tmp_path)
+    sub = p.bus.subscribe()
+    p.run()
+    kfs = [e for e in sub.drain() if e["type"] == "keyframe"]
+    assert kfs and all(e["path"] == e["raw_path"] for e in kfs)  # 单通道
+
+
+def test_overlay_without_out_dir_renders_nothing(synthetic_video):
+    from rvs.intent_overlay import IntentOverlay
+    lb = _FakeLabeler()
+    p = RobotPipeline(FileSource(synthetic_video), labeler=lb,
+                      overlay=IntentOverlay())          # 无 out_dir
+    sub = p.bus.subscribe()
+    summary = p.run()
+    kfs = [e for e in sub.drain() if e["type"] == "keyframe"]
+    assert summary["ok"] and kfs
+    assert all(not e.get("path") for e in kfs)          # 无落盘：不渲染
+    assert all(_magenta_count(f) == 0 for f in lb.frames)  # 打标仍吃原帧
