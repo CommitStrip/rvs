@@ -101,8 +101,13 @@ class RobotPipeline:
                     if cmd is not None:
                         self.gate.update(cmd)
                     # 本体状态行变化节流发布（慎思素材窗的归因上下文通道，
-                    # vus ego_state 事件 → UnderstandingWindow.proprio_line）
+                    # vus ego_state 事件 → UnderstandingWindow.proprio_line）；
+                    # overlay 激活时拼接计划视图约定（VLM 需知道绿线/箭头
+                    # 的语义才能正确归因）
                     line = self.proprio_line()
+                    if self.overlay is not None:
+                        note = self.overlay.prompt_note()
+                        line = (line + "；" + note) if line else note
                     if line != self._last_proprio_line:
                         self._last_proprio_line = line
                         self.bus.publish({"type": "ego_state", "t": t,

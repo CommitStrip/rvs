@@ -224,6 +224,31 @@ def test_no_ego_provider_publishes_no_ego_state(synthetic_video):
     assert not [e for e in sub.drain() if e["type"] == "ego_state"]  # 回归
 
 
+def test_overlay_prompt_note_reaches_deliberation(synthetic_video, tmp_path):
+    """overlay 激活时，计划视图的约定文本随 ego_state 进 VLM prompt——
+    模型必须知道绿线/箭头是渲染的计划标注才能正确归因。"""
+    from rvs.intent_overlay import IntentOverlay
+    from vus.live.state import SessionState
+    from vus.live.vlm_client import MockVLM as VusMock
+
+    state = SessionState()
+    vlm = VusMock()
+    pipe = RobotPipeline(FileSource(synthetic_video),
+                         ego_provider=lambda t: CommandState(
+                             t=t, linear_v=0.8 if t < 1.5 else 0.0),
+                         labeler=_FakeLabeler(), out_dir=tmp_path,
+                         overlay=IntentOverlay())
+    worker = pipe.attach_understanding(state=state, vlm=vlm)
+    try:
+        pipe.run()
+        worker.wait_idle(timeout=10.0)
+        assert vlm.calls
+        assert any("【画面约定】" in c["prompt"] and "计划轨迹" in c["prompt"]
+                   for c in vlm.calls)
+    finally:
+        worker.stop()
+
+
 def test_proprio_line_reaches_deliberation_prompt(synthetic_video, tmp_path):
     """端到端：本体状态行经 ego_state 进素材窗、出现在 VLM prompt。"""
     from vus.live.state import SessionState
