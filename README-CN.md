@@ -97,7 +97,7 @@ flowchart LR
 ## 安装
 
 ```bash
-pip install git+https://github.com/CommitStrip/rvs.git
+pip install git+https://github.com/CommitStrip/robot-vision-skill.git
 # 依赖 vus 核心库（随依赖传递安装）
 ```
 

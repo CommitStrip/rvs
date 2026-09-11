@@ -95,7 +95,7 @@ flowchart LR
 ## Install
 
 ```bash
-pip install git+https://github.com/CommitStrip/rvs.git
+pip install git+https://github.com/CommitStrip/robot-vision-skill.git
 # requires the vus core library (installed transitively)
 ```
 
