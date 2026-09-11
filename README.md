@@ -1,14 +1,14 @@
-# rvs — robot-vision-skill
+# rvs — robot-visual-reflex-system
 
 <div align="center">
 
 **English** · [简体中文](README-CN.md)
 
-![Tests](https://img.shields.io/badge/tests-15%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-57%20passed-brightgreen)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 
-**A robot-native increment layer on top of [vus](https://github.com/CommitStrip/video-understanding-skill): proprioceptive gating + peripheral vision + robot bridge**
+**The robot visual reflex system on top of [vus](https://github.com/CommitStrip/video-understanding-skill): proprioceptive gating + peripheral vision + semantic reflex arc + action-conditioned perception**
 
 </div>
 
@@ -95,7 +95,7 @@ flowchart LR
 ## Install
 
 ```bash
-pip install git+https://github.com/CommitStrip/robot-vision-skill.git
+pip install git+https://github.com/CommitStrip/robot-visual-reflex-system.git
 # requires the vus core library (installed transitively)
 ```
 

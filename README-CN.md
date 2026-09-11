@@ -1,14 +1,14 @@
-# rvs — robot-vision-skill
+# rvs — robot-visual-reflex-system
 
 <div align="center">
 
 [English](README.md) · **简体中文**
 
-![Tests](https://img.shields.io/badge/tests-15%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-57%20passed-brightgreen)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 
-**[vus](https://github.com/CommitStrip/video-understanding-skill) 之上的机器人增量层：本体感受门控 + 外围视觉 + 机器人桥**
+**[vus](https://github.com/CommitStrip/video-understanding-skill) 之上的机器人视觉反射系统：本体感受门控 + 外围视觉 + 语义反射弧 + 行动条件化感知**
 
 </div>
 
@@ -97,7 +97,7 @@ flowchart LR
 ## 安装
 
 ```bash
-pip install git+https://github.com/CommitStrip/robot-vision-skill.git
+pip install git+https://github.com/CommitStrip/robot-visual-reflex-system.git
 # 依赖 vus 核心库（随依赖传递安装）
 ```
 
